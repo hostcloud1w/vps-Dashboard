@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VPS Earn Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: #1e293b; border-radius: 12px; margin-bottom: 20px; }
+  h1 { font-size: 20px; color: #38bdf8; }
+  .coins { background: #facc15; color: #000; padding: 8px 16px; border-radius: 20px; font-weight: bold; }
+  .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #38bdf8; }
+  .task { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; }
+  .task-title { font-weight: 600; font-size: 14px; }
+  .task-desc { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  .reward { color: #facc15; font-weight: bold; margin-right: 10px; font-size: 13px; }
+  button { background: #38bdf8; color: #0f172a; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+  button:hover { background: #0ea5e9; }
+  button:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
+  button.danger { background: #ef4444; color: #fff; }
+  input { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; margin-bottom: 10px; }
+  label { font-size: 12px; color: #94a3b8; display: block; margin-bottom: 4px; }
+  .vps-item { background: #0f172a; padding: 14px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; }
+  .vps-item .name { font-weight: 600; color: #38bdf8; }
+  .vps-item .meta { color: #94a3b8; font-size: 11px; margin: 4px 0; }
+  .vps-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .vps-actions button { padding: 4px 10px; font-size: 11px; }
+  .url-box { background: #0b1220; padding: 8px 10px; border-radius: 6px; margin-top: 6px; font-family: monospace; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .url-box.direct { border-left: 3px solid #facc15; }
+  .url-box.tunnel { border-left: 3px solid #a855f7; }
+  .url-box a { color: #4ade80; text-decoration: none; word-break: break-all; }
+  .url-box a:hover { text-decoration: underline; }
+  .copy { background: #334155; color: #e2e8f0; padding: 2px 8px; font-size: 10px; }
+  .auth { max-width: 400px; margin: 100px auto; }
+  .hidden { display: none; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; margin-left: 6px; }
+  .status.running { background: #166534; color: #4ade80; }
+  .status.stopped { background: #7f1d1d; color: #fca5a5; }
+  .status.creating { background: #713f12; color: #fbbf24; }
+  .status.failed { background: #7f1d1d; color: #fca5a5; }
+  .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tabs button { background: #1e293b; color: #94a3b8; }
+  .tabs button.active { background: #38bdf8; color: #0f172a; }
+  .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; background: #1e293b; border: 1px solid #38bdf8; z-index: 999; }
+  .hint { font-size: 11px; color: #64748b; margin-top: 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="toast" class="toast hidden"></div>
+
+<div id="authView" class="auth container">
+  <div class="card">
+    <h2 id="authTitle">Login</h2>
+    <input id="username" placeholder="Username">
+    <input id="password" type="password" placeholder="Password">
+    <button onclick="doAuth()" style="width:100%">Login</button>
+    <p style="text-align:center;margin-top:12px;font-size:12px;color:#94a3b8">
+      <a href="#" onclick="toggleAuth()" style="color:#38bdf8">Need an account?</a>
+    </p>
+  </div>
+</div>
+
+<div id="dashView" class="container hidden">
+  <header>
+    <h1>⚡ VPS Earn Dashboard</h1>
+    <div>
+      <span class="coins">💰 <span id="coinCount">0</span></span>
+      <button onclick="logout()" style="margin-left:12px">Logout</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button id="tab-tasks" class="active" onclick="showTab('tasks')">📋 Earn Coins</button>
+    <button id="tab-vps" onclick="showTab('vps')">🖥️ My VPS</button>
+    <button id="tab-create" onclick="showTab('create')">➕ Create VPS</button>
+  </div>
+
+  <div id="tabContent"></div>
+</div>
+
+<script>
+let token = localStorage.getItem('token');
+let isRegister = false;
+let state = { user: null, vps: [], tasks: [], tunnelEnabled: false, hostIp: '' };
+
+function toast(msg, color = '#38bdf8') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = color;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function toggleAuth() {
+  isRegister = !isRegister;
+  document.getElementById('authTitle').textContent = isRegister ? 'Register' : 'Login';
+}
+
+async function doAuth() {
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  try {
+    const data = await api(isRegister ? '/api/register' : '/api/login', 'POST', { username, password });
+    token = data.token;
+    localStorage.setItem('token', token);
+    loadDashboard();
+  } catch (e) { toast(e.message, '#ef4444'); }
+}
+
+function logout() {
+  localStorage.removeItem('token'); token = null; location.reload();
+}
+
+async function loadDashboard() {
+  try {
+    const data = await api('/api/me');
+    state.user = data.user;
+    state.vps = data.vps;
+    state.tunnelEnabled = data.tunnelEnabled;
+    state.hostIp = data.hostIp;
+    document.getElementById('authView').classList.add('hidden');
+    document.getElementById('dashView').classList.remove('hidden');
+    document.getElementById('coinCount').textContent = data.user.coins;
+    showTab('tasks');
+  } catch (e) {
+    if (token) { localStorage.removeItem('token'); token = null; }
+    document.getElementById('authView').classList.remove('hidden');
+    document.getElementById('dashView').classList.add('hidden');
+  }
+}
+
+function showTab(tab) {
+  ['tasks','vps','create'].forEach(t =>
+    document.getElementById('tab-'+t).classList.toggle('active', t===tab));
+  const c = document.getElementById('tabContent');
+  if (tab === 'tasks') renderTasks(c);
+  else if (tab === 'vps') renderVPS(c);
+  else renderCreate(c);
+}
+
+async function renderTasks(c) {
+  try {
+    const tasks = await api('/api/tasks');
+    c.innerHTML = `
+      <div class="card">
+        <h2>Complete tasks to earn coins</h2>
+        ${tasks.map(t => `
+          <div class="task">
+            <div>
+              <div class="task-title">${t.title}</div>
+              <div class="task-desc">${t.description}</div>
+            </div>
+            <span class="reward">+${t.reward}💰</span>
+            <button ${t.completed ? 'disabled' : ''} onclick="completeTask('${t.taskId}')">
+              ${t.completed ? 'Done ✓' : 'Complete'}
+            </button>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch(e) { c.innerHTML = `<div class="card">Error: ${e.message}</div>`; }
+}
+
+async function completeTask(taskId) {
+  try {
+    const data = await api(`/api/tasks/${taskId}/complete`, 'POST');
+    document.getElementById('coinCount').textContent = data.coins;
+    toast(`+${data.reward} coins!`, '#4ade80');
+    showTab('tasks');
+  } catch(e) { toast(e.message, '#ef4444'); }
+}
+
+function copy(text) {
+  navigator.clipboard.writeText(text).then(() => toast('Copied!', '#4ade80'));
+}
+
+function renderVPS(c) {
+  if (!state.vps.length) {
+    c.innerHTML = '<div class="card"><h2>No VPS yet</h2><p class="hint">Go to <b>Create VPS</b> to launch one using your coins.</p></div>';
+    return;
+  }
+  c.innerHTML = `
+    <div class="card">
+      <h2>My VPS (${state.vps.length})</h2>
+      ${state.vps.map(v => {
+        const directUrl = `http://${state.hostIp}:${v.port}`;
+        const tunnelUrl = state.tunnelEnabled && v.hostname ? `https://${v.hostname}` : null;
+        return `
+          <div class="vps-item">
+            <div class="name">${v.name} <span class="status ${v.status}">${v.status}</span></div>
+            <div class="meta">${v.ram}MB RAM · ${v.cpu} vCPU · ${v.disk}GB disk · ${v.containerName}</div>
+
+            ${v.port ? `
+              <div class="url-box direct">
+                <span>🌐 <a href="${directUrl}" target="_blank">${directUrl}</a></span>
+                <button class="copy" onclick="copy('${directUrl}')">Copy</button>
+              </div
