@@ -206,4 +206,103 @@ function renderVPS(c) {
               <div class="url-box direct">
                 <span>🌐 <a href="${directUrl}" target="_blank">${directUrl}</a></span>
                 <button class="copy" onclick="copy('${directUrl}')">Copy</button>
-              </div
+              </div>` : ''}
+
+            ${tunnelUrl ? `
+              <div class="url-box tunnel">
+                <span>🔒 <a href="${tunnelUrl}" target="_blank">${tunnelUrl}</a></span>
+                <button class="copy" onclick="copy('${tunnelUrl}')">Copy</button>
+              </div>` : ''}
+
+            <div class="meta" style="margin-top:8px">
+              🔑 SSH: <code>ssh root@${state.hostIp} -p ${v.port}</code> · pass: <code>${v.password}</code>
+            </div>
+
+            <div class="vps-actions">
+              <button onclick="vpsAction('${v._id}','start')">Start</button>
+              <button onclick="vpsAction('${v._id}','stop')">Stop</button>
+              <button onclick="vpsAction('${v._id}','restart')">Restart</button>
+              <button class="danger" onclick="deleteVPS('${v._id}')">Delete</button>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function vpsAction(id, action) {
+  try {
+    await api(`/api/vps/${id}/action`, 'POST', { action });
+    toast(`VPS ${action}ed`);
+    const d = await api('/api/me'); state.vps = d.vps; showTab('vps');
+  } catch(e) { toast(e.message, '#ef4444'); }
+}
+
+async function deleteVPS(id) {
+  if (!confirm('Delete permanently?')) return;
+  try {
+    await api(`/api/vps/${id}`, 'DELETE');
+    toast('Deleted');
+    const d = await api('/api/me'); state.vps = d.vps; showTab('vps');
+  } catch(e) { toast(e.message, '#ef4444'); }
+}
+
+function renderCreate(c) {
+  c.innerHTML = `
+    <div class="card">
+      <h2>Create a new VPS</h2>
+      <label>Name (lowercase / numbers / dashes)</label>
+      <input id="vpsName" value="my-server">
+      <label>RAM (MB, 256-4096)</label>
+      <input id="vpsRam" type="number" value="512" min="256" max="4096" step="256" oninput="updateCost()">
+      <label>vCPU (1-4)</label>
+      <input id="vpsCpu" type="number" value="1" min="1" max="4" oninput="updateCost()">
+      <label>Disk (GB, 2-40)</label>
+      <input id="vpsDisk" type="number" value="5" min="2" max="40" oninput="updateCost()">
+      <div style="background:#0f172a;padding:12px;border-radius:8px;margin:12px 0">
+        <div style="font-size:13px;color:#94a3b8">
+          Cost: <span id="costValue" style="color:#facc15;font-weight:bold">0</span> coins
+          · You have ${state.user?.coins || 0}
+        </div>
+      </div>
+      <button onclick="createVPS()" style="width:100%">🚀 Launch VPS</button>
+      <p class="hint">
+        Each VPS gets <b>two URLs</b>:<br>
+        • 🌐 Direct: <code>http://${state.hostIp}:PORT</code> (works immediately)<br>
+        ${state.tunnelEnabled
+          ? `• 🔒 Tunnel: <code>https://NAME.vps.yourdomain.com</code> (HTTPS, no port, ~20s to propagate)`
+          : `• 🔒 Tunnel is disabled — set TUNNEL_ID in .env to enable HTTPS subdomains.`}
+      </p>
+    </div>`;
+  updateCost();
+}
+
+function updateCost() {
+  const ram = +document.getElementById('vpsRam').value || 0;
+  const cpu = +document.getElementById('vpsCpu').value || 0;
+  const disk = +document.getElementById('vpsDisk').value || 0;
+  const cost = Math.ceil(ram/256)*5 + cpu*3 + disk*1;
+  document.getElementById('costValue').textContent = cost;
+}
+
+async function createVPS() {
+  const name = document.getElementById('vpsName').value;
+  const ram = +document.getElementById('vpsRam').value;
+  const cpu = +document.getElementById('vpsCpu').value;
+  const disk = +document.getElementById('vpsDisk').value;
+  try {
+    const data = await api('/api/vps/create', 'POST', { name, ram, cpu, disk });
+    toast('Creating VPS — check "My VPS" tab', '#4ade80');
+    document.getElementById('coinCount').textContent = data.coins;
+    setTimeout(async () => {
+      const me = await api('/api/me');
+      state.vps = me.vps; state.user = me.user;
+      showTab('vps');
+    }, 1000);
+  } catch(e) { toast(e.message, '#ef4444'); }
+}
+
+if (token) loadDashboard();
+else document.getElementById('authView').classList.remove('hidden');
+</script>
+</body>
+</html>
